@@ -1,15 +1,12 @@
 # Arduino Library base folder and example structure
 EXAMPLES_BASE = sketch
-EXAMPLE ?= cli_sketch.ino
-
-# Arduino CLI executable name and directory location
-ARDUINO_CLI = arduino-cli
+FILE ?= sketch.ino
 
 # Arduino CLI Board type
 BOARD_TYPE ?= arduino:avr:nano
 
 # Default port to upload to
-SERIAL_PORT ?= /dev/cu.usbserial-21230
+SERIAL_PORT ?= /dev/cu.usbserial-210
 
 # Optional verbose compile/upload trigger
 V ?= 0
@@ -23,18 +20,14 @@ ifneq ($(V), 0)
     VERBOSE=-v
 endif
 
-.PHONY: all example program clean
+compile:
+	arduino-cli compile -p ${SERIAL_PORT} -b ${BOARD_TYPE} ${FILE}
 
-all: example
+upload: compile
+	arduino-cli upload -p ${SERIAL_PORT} --fqbn ${BOARD_TYPE} ${FILE}
 
-example:
-		$(ARDUINO_CLI) compile $(VERBOSE) -b $(BOARD_TYPE) .
+dev: compile upload
+	arduino-cli monitor -p $(SERIAL_PORT) -b $(BOARD_TYPE)
 
-program:
-		$(ARDUINO_CLI) compile $(VERBOSE) -b $(BOARD_TYPE) .
-		$(ARDUINO_CLI) upload $(VERBOSE) -p $(SERIAL_PORT) --fqbn $(BOARD_TYPE) .
 
-clean:
-		@rm -rf $(BUILD_PATH)
-		@rm $(EXAMPLES_BASE)/$(EXAMPLE)/*.elf
-		@rm $(EXAMPLES_BASE)/$(EXAMPLE)/*.hex
+# arduino-cli upload -p /dev/ttyACM0 --fqbn arduino:samd:mkr1000 MyFirstSketch
