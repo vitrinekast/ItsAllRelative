@@ -1,5 +1,3 @@
-
-
 #include <SPI.h>
 #include <Wire.h>
 #include <Button2.h>
@@ -9,6 +7,7 @@
 #include <SSD1306AsciiAvrI2c.h>
 
 #define SCREEN_ADDRESS 0x3C
+#define DAC_ADDRESS 0x60
 
 #define ROTARY_PIN1 2
 #define ROTARY_PIN2 3
@@ -28,14 +27,16 @@
 #define CONFIG_DELAY 1
 #define CONFIG_LEVEL 2
 
-  #define BTN_LONGCLICK_MS 800
+#define BTN_LONGCLICK_MS 800
 
+int STEP_LEN = 20;
 
 // Config & timing states
 int ch_millistep[MAX_CHANNELS] = {0, 0, 0, 0};
 int ch_nextmillis[MAX_CHANNELS] = {0, 0, 0, 0};
+int ch_values[MAX_CHANNELS] = {0, 0, 0, 0};
 
-int bpm = 120;
+int bpm = 50;
 
 bool isPlaying = true;
 
@@ -52,18 +53,18 @@ int selected_config = 0;
 
 String CONFIGS[MAX_CONFIG] = {"modifier", "delay", "level"};
 
-float CONFIG_VALUES[MAX_CHANNELS][MAX_CONFIG] = {{1.0, 0, 1.0}, {1.0, 0, 1.0}, {1.0, 0, 1.0}, {1.0, 0, 1.0}};
+float CONFIG_VALUES[MAX_CHANNELS][MAX_CONFIG] = {{1.0, 0, 1.0}, {1.0, 0, 1.0}, {1.0, 0, 0.8}, {1.0, 0, 1.0}};
 String CONFIG_PREPENDS[MAX_CONFIG] = {"x", "MS", ""};
 
 // Update the menu UI upon a menu state change
 void handleMenuStateChange()
 {
-  Serial.println(F("handleMenuStateChange"));
+  // Serial.println(F("handleMenuStateChange"));
 
   switch (menu_state)
   {
   case MSTATE_IDLE:
-    Serial.println(F("Idle mode"));
+    // Serial.println(F("Idle mode"));
     oled.clear();
     // display.setCursor(0, 0);
     oled.print(F("idle"));
@@ -78,9 +79,9 @@ void handleMenuStateChange()
     // oled.println(F("..."));
     break;
   case MSTATE_EDIT:
-  oled.clear(2, 80, 1, 2);
-  oled.setCursor(0, 2);
-  oled.print(CONFIGS[selected_config]);
+    oled.clear(2, 80, 1, 2);
+    oled.setCursor(0, 2);
+    oled.print(CONFIGS[selected_config]);
     // display.fillRect(0, 20, 20, 1, SSD1306_BLACK);
     break;
   }
@@ -94,11 +95,11 @@ void updateMenu(int p)
   switch (menu_state)
   {
   case MSTATE_IDLE:
-    Serial.println(F("Idle mode"));
+    // Serial.println(F("Idle mode"));
     break;
   case MSTATE_CHANNEL:
 
-    Serial.println(F("channel mode"));
+    // Serial.println(F("channel mode"));
     selected_channel = max(0, min(MAX_CHANNELS, p));
     oled.clear(80, 128, 1, 2);
     oled.setCursor(80, 0);
@@ -121,16 +122,20 @@ void updateMenu(int p)
     oled.setCursor(80, 2);
     oled.clear(80, 128, 2, 3);
     oled.print("> ");
-    
+
     oled.print(CONFIG_VALUES[selected_channel][selected_config]);
     break;
   }
 }
 // apply the new value to the channel
-void setNewMillistep()
+void setNewMillistep(int channel)
 {
-  int base = (bpm / 60) * (CONFIG_VALUES[selected_channel][CONFIG_MODIFIER] * 100);
-  ch_millistep[selected_channel] = base + CONFIG_VALUES[selected_channel][CONFIG_DELAY];
+  float mod = CONFIG_VALUES[channel][CONFIG_MODIFIER];
+  float part = 60 / (float)bpm;
+  int base = (float)part * 1000;
+  STEP_LEN = 2;
+  Serial.println("setNewMillistep");
+  ch_millistep[channel] = (base / mod) + CONFIG_VALUES[channel][CONFIG_DELAY];
 }
 
 // set the new config value based on the rotary position. Each config has a different step size
@@ -142,7 +147,7 @@ void setNewConfigValue(int p)
     int step = 1;
     CONFIG_VALUES[selected_channel][selected_config] = goesUp ? CONFIG_VALUES[selected_channel][selected_config] + step : CONFIG_VALUES[selected_channel][selected_config] - step;
 
-    setNewMillistep();
+    setNewMillistep(selected_channel);
   }
   else if (CONFIGS[selected_config] == "level")
   {
@@ -155,7 +160,7 @@ void setNewConfigValue(int p)
     float step = CONFIG_VALUES[selected_channel][selected_config] > 1.0 ? 0.25 : 0.1;
     float newValue = goesUp ? CONFIG_VALUES[selected_channel][selected_config] + step : CONFIG_VALUES[selected_channel][selected_config] - step;
     CONFIG_VALUES[selected_channel][selected_config] = max(0.25, min(5.0, newValue));
-    setNewMillistep();
+    setNewMillistep(selected_channel);
   }
 }
 
@@ -180,7 +185,7 @@ void onButtonClick()
 // if the menu is idle, set it to channel, otherwise to idle
 void onButtonLongPress()
 {
-  Serial.println(F("onbutton long press"));
+  // Serial.println(F("onbutton long press"));
   menu_state = menu_state == MSTATE_IDLE ? MSTATE_CHANNEL : MSTATE_IDLE;
   handleMenuStateChange();
 }
@@ -189,15 +194,20 @@ void setup()
 {
   Serial.begin(9600);
   // Setup the display, DAC, wait for it to finish
-  // if (!mcp.begin());
-  // {
-  //   Serial.println(F("mcp allocation failed"));
-  //   for (;;)
-  //     ; // Don't proceed, loop forever
-  // }
   oled.begin(&Adafruit128x32, SCREEN_ADDRESS);
   oled.setFont(System5x7);
   oled.clear();
+
+  // Try to initialize!
+  if (!mcp.begin(DAC_ADDRESS))
+  {
+    // Serial.println("Failed to find MCP4728 chip");
+    while (1)
+    {
+      delay(10);
+    }
+  }
+
   oled.println("HELLO how r u");
 
   // Attach the buttons
@@ -207,12 +217,9 @@ void setup()
   b.setClickHandler(onButtonClick);
   b.setLongClickDetectedHandler(onButtonLongPress);
 
-  delay(500);
+  mcp.fastWrite(0, 0, 0, 0);
 
-  // mcp.setChannelValue(MCP4728_CHANNEL_A, 0);
-  // mcp.setChannelValue(MCP4728_CHANNEL_B, 0);
-  // mcp.setChannelValue(MCP4728_CHANNEL_C, 0);
-  // mcp.setChannelValue(MCP4728_CHANNEL_D, 0);
+  delay(1000);
 
   handleMenuStateChange();
 
@@ -221,9 +228,51 @@ void setup()
 
   for (size_t i = 0; i < MAX_CHANNELS; i++)
   {
-    ch_millistep[i] = (bpm / 60) * 100;
+    setNewMillistep(i);
     ch_nextmillis[i] = m + ch_millistep[i];
+
+    // Serial.print("Step: ");
+    // Serial.print(i);
+    // Serial.print(" - ");
+    // Serial.print(ch_millistep[i]);
+    // Serial.print(" - ");
+    // Serial.println(m);
   }
+}
+
+void doStep(int m, int step)
+{
+  // Serial.print("Doing step");
+  // Serial.print(step);
+  // Serial.print(" time: ");
+  // Serial.print(m);
+  // Serial.print(" nextmillis: ");
+  // Serial.print(ch_nextmillis[step]);
+  // Serial.print(" do: ");
+
+  if (m >= ch_nextmillis[step])
+  {
+    if (ch_values[step] == 0)
+    {
+      // Serial.print("HIGH");
+      float level = CONFIG_VALUES[step][CONFIG_LEVEL];
+      ch_values[step] = (4095 * float(level));
+      
+      Serial.println(ch_values[step]);
+      mcp.setChannelValue(step, ch_values[step]);
+      
+      ch_nextmillis[step] += STEP_LEN;
+    }
+    else
+    {
+      // Serial.print("LOW");
+      ch_values[step] = 0;
+      mcp.setChannelValue(step, 0);
+      ch_nextmillis[step] += (ch_millistep[step] - STEP_LEN);
+    }
+  }
+
+  // Serial.println();
 }
 
 void loop()
@@ -231,21 +280,15 @@ void loop()
   r.loop();
   b.loop();
 
-  // if (isPlaying)
-  // {
+  if (isPlaying)
+  {
 
-  //   int m = millis();
-  //   // loop tru all channels and check if they should be triggered
-  //   for (size_t i = 0; i < MAX_CHANNELS; i++)
-  //   {
-  //     {
-  //       if (m >= ch_nextmillis[i])
-  //       {
-  //         mcp.setChannelValue(i, 4095);
-  //       } else {
-  //         mcp.setChannelValue(i, 0);
-  //       }
-  //     }
-  //   }
-  // }
+    int m = millis();
+    // loop tru all channels and check if they should be triggered
+    for (size_t i = 0; i < MAX_CHANNELS; i++)
+    {
+      doStep(m, i);
+    }
+    // doStep(m, 0);
+  }
 }
