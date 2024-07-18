@@ -1,12 +1,12 @@
 # Arduino Library base folder and example structure
 EXAMPLES_BASE = sketch
-FILE ?= sketch.ino
+FILE ?= 20240610_ArduinoEurorackSequencer.ino
 
 # Arduino CLI Board type
 BOARD_TYPE ?= arduino:avr:nano
 
 # Default port to upload to
-SERIAL_PORT ?= /dev/cu.usbserial-210
+SERIAL_PORT ?= /dev/cu.usbserial-110
 
 # Optional verbose compile/upload trigger
 V ?= 0
@@ -21,13 +21,14 @@ ifneq ($(V), 0)
 endif
 
 compile:
+	clear
 	arduino-cli compile -p ${SERIAL_PORT} -b ${BOARD_TYPE} ${FILE}
 
 upload: compile
 	arduino-cli upload -p ${SERIAL_PORT} --fqbn ${BOARD_TYPE} ${FILE}
 
 dev: compile upload
-	arduino-cli monitor -p $(SERIAL_PORT) -b $(BOARD_TYPE)
+	arduino-cli monitor -p $(SERIAL_PORT) -b $(BOARD_TYPE) --timestamp
 
 
 # arduino-cli upload -p /dev/ttyACM0 --fqbn arduino:samd:mkr1000 MyFirstSketch
